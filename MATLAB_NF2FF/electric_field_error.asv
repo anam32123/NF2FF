@@ -1,0 +1,289 @@
+% complex error function
+function error_metrics=electric_field_error(original_field,offset_field,x,y,label_1,label_2,outputs)
+
+    % x and y are just vectors for plotting--could be phi and theta, kx and
+    % ky, etc. Make sure htat they are vectors, not grids, otherwise we
+    % can't calculate soli angle.
+    [x_grid,y_grid]=meshgrid(x,y);
+
+    error_metrics.error=offset_field-original_field;
+    error_real=real(error_metrics.error);
+    error_im=imag(error_metrics.error);
+    original_field_real=real(original_field);
+    original_field_im=imag(original_field);
+    offset_field_real=real(offset_field);
+    offset_field_im=imag(offset_field);
+    error_amplitude=abs(error_metrics.error);
+    error_phase=angle(error_metrics.error);
+    original_field_amplitude=abs(original_field);
+    offset_field_amplitude=abs(offset_field);
+
+%     % doing it where I take amplitude/phase first, then subtract--per
+%     % Will's request
+%     original_field_phase=angle(original_field);
+%     offset_field_phase=angle(offset_field);
+%     original_field_amplitude=abs(original_field);
+%     offset_field_amplitude=abs(offset_field);
+%     error_phase=offset_field_phase-original_field_phase;
+%     error_amplitude=offset_field_amplitude-original_field_amplitude;
+% 
+%     weighted_pct_error_amplitude=error_amplitude./((original_field_amplitude+offset_field_amplitude)./2);
+
+    original_field_phase=angle(original_field);
+    offset_field_phase=angle(offset_field);
+
+    error_real=exclude_7sigma_outliers(error_real);
+    error_im=exclude_7sigma_outliers(error_im);
+%     error_amplitude=exclude_7sigma_outliers(error_amplitude);
+%     error_phase=exclude_7sigma_outliers(error_phase);
+
+    % exclude values where the original field is 0, because that will
+    % result in infinity when we divide by non-offset field.
+%     exclude_indices=find(original_field==0);
+%     error_metrics.error(exclude_indices)=NaN;
+%     error_amplitude(exclude_indices)=NaN;
+%     error_amplitude(exclude_indices)=NaN;
+%     exclude_indices_amplitude=cat(1,exclude_indices_amplitude,amplitude_outliers_indices);
+%     exclude_indices_phase=cat(1,exclude_indices_phase,phase_outliers_indices);
+
+    % calculating weighted percent difference--for amplitude and
+    % phase--real and imaginary components separately
+    weighted_percent_difference_real=error_real./((original_field_real+offset_field_real)/2);
+    weighted_percent_difference_im=error_im./((original_field_im+offset_field_im)/2);
+    error_metrics.weighted_percent_difference=complex(weighted_percent_difference_real,weighted_percent_difference_im);
+    error_metrics.weighted_percent_difference_amplitude=abs(error_metrics.weighted_percent_difference);
+    error_metrics.weighted_percent_difference_phase=angle(error_metrics.weighted_percent_difference);
+    % taking mean of amplitude and phase errors
+    error_metrics.weighted_percent_difference_amplitude_mean=mean(error_metrics.weighted_percent_difference_amplitude,'all','omitnan');
+    error_metrics.weighted_percent_difference_phase_mean=mean(error_metrics.weighted_percent_difference_phase,'all','omitnan');
+    % mean of imaginary and real components separately
+    weighted_percent_difference_real_mean=mean(weighted_percent_difference_real,'all','omitnan');
+    weighted_percent_difference_im_mean=mean(weighted_percent_difference_im,'all','omitnan');
+    error_metrics.weighted_percent_difference_mean=complex(weighted_percent_difference_real_mean,weighted_percent_difference_im_mean);
+    error_metrics.weighted_percent_difference_mean_amplitude=abs(error_metrics.weighted_percent_difference_mean);
+    error_metrics.weighted_percent_difference_mean_phase=angle(error_metrics.weighted_percent_difference_mean);
+  
+    % calculating max - min of the error dataset
+    error_range_real=max(error_real,[],'all')-min(error_real,[],'all');
+    error_range_im=max(error_im,[],'all')-min(error_im,[],'all');
+    error_metrics.error_range=complex(error_range_real,error_range_im);
+    error_metrics.error_range_amplitude=abs(error_metrics.error_range);
+    error_metrics.error_range_phase=angle(error_metrics.error_range);
+    pct_difference_range_real=max(weighted_percent_difference_real,[],'all')-min(weighted_percent_difference_real,[],'all');
+    pct_difference_range_im=max(weighted_percent_difference_im,[],'all')-min(weighted_percent_difference_im,[],'all');
+    error_metrics.pct_difference_range=complex(pct_difference_range_real,pct_difference_range_im);
+    error_metrics.pct_difference_range_amplitude=abs(error_metrics.pct_difference_range);
+    error_metrics.pct_difference_range_phase=angle(error_metrics.pct_difference_range);
+
+    % standard deviation of the error
+    std_error_real=std(error_real,0,'all','omitnan');
+    std_error_im=std(error_im,0,'all','omitnan');
+    error_metrics.std_error=complex(std_error_real,std_error_im);
+    error_metrics.std_error_amplitude=abs(error_metrics.std_error);
+    error_metrics.std_error_phase=angle(error_metrics.std_error);
+    pct_diff_std_error_real=std(weighted_percent_difference_real,0,'all','omitnan');
+    pct_diff_std_error_im=std(weighted_percent_difference_im,0,'all','omitnan');
+    error_metrics.pct_diff_std_error=complex(pct_diff_std_error_real,pct_diff_std_error_im);
+    error_metrics.pct_diff_std_error_amplitude=abs(error_metrics.pct_diff_std_error);
+    error_metrics.pct_diff_std_error_phase=angle(error_metrics.pct_diff_std_error);
+
+    % subtracting abs(b1)-abs(b2)--an error that is more of a magnitude
+    error_metrics.error_magnitudes=abs(original_field)-abs(offset_field);
+    error_metrics.error_magnitudes_mean=mean(error_metrics.error_magnitudes,'all','omitnan');
+    error_metrics.pct_error_magnitudes=error_metrics.error_magnitudes./((abs(original_field)+abs(offset_field))/2);
+    error_metrics.pct_error_magnitudes_mean=mean(error_metrics.pct_error_magnitudes,'all','omitnan');
+
+    dB_cutoff=-145;
+    power_cutoff=10^(dB_cutoff/20);
+    control_excluded_indices=find(original_field_amplitude < power_cutoff);
+    original_field_amplitude_excluded=original_field_amplitude;
+    original_field_amplitude_excluded(control_excluded_indices)=NaN;
+    original_field_real_excluded=original_field_real;
+    original_field_im_excluded=original_field_im;
+    original_field_real_excluded(control_excluded_indices)=NaN;
+    original_field_im_excluded(control_excluded_indices)=NaN;
+    perturbed_excluded_indices=find(offset_field_amplitude < power_cutoff);
+    perturbed_amplitude_excluded=offset_field_amplitude;
+    perturbed_amplitude_excluded(perturbed_excluded_indices)=NaN;
+    perturbed_field_real_excluded=offset_field_real;
+    perturbed_field_im_excluded=offset_field_im;
+    perturbed_field_real_excluded(perturbed_excluded_indices)=NaN;
+    perturbed_field_im_excluded(perturbed_excluded_indices)=NaN;
+
+    % calculating fractional change in solid angle as a form of error metrics
+    solid_angle_control=sum(original_field_amplitude,'all');
+    solid_angle_perturbed=sum(offset_field_amplitude,'all');
+    error_metrics.solid_angle_error_fraction=abs((solid_angle_control-solid_angle_perturbed)/solid_angle_control);
+    solid_angle_control_integrated=trapz(y,trapz(x,original_field_amplitude,2));
+    solid_angle_perturbed_integrated=trapz(y,trapz(x,offset_field_amplitude,2));
+    error_metrics.solid_angle_integrated_error_fraction=abs((solid_angle_control_integrated-solid_angle_perturbed_integrated)/solid_angle_control_integrated);
+
+    % excluded version
+    solid_angle_control_excluded=sum(original_field_amplitude_excluded,'all','omitnan');
+    solid_angle_perturbed_excluded=sum(perturbed_amplitude_excluded,'all','omitnan');
+    error_metrics.solid_angle_error_fraction_excluded=abs((solid_angle_control_excluded-solid_angle_perturbed_excluded)/solid_angle_control_excluded);
+    solid_angle_control_integrated_excluded=trapz(y,trapz(x,original_field_amplitude_excluded,2));
+    solid_angle_perturbed_integrated_excluded=trapz(y,trapz(x,perturbed_amplitude_excluded,2));
+    error_metrics.solid_angle_integrated_error_fraction_excluded=abs((solid_angle_control_integrated_excluded-solid_angle_perturbed_integrated_excluded)/solid_angle_control_integrated_excluded);
+
+    % fractional change in solid angle with the vector method--integration
+    % and sum
+    solid_angle_control_real=sum(original_field_real,'all');
+    solid_angle_control_im=sum(original_field_im,'all');
+    solid_angle_perturbed_real=sum(offset_field_real,'all');
+    solid_angle_perturbed_im=sum(offset_field_im,'all');
+    solid_angle_error_real=(solid_angle_control_real-solid_angle_perturbed_real)/solid_angle_control_real;
+    solid_angle_error_im=(solid_angle_control_im-solid_angle_perturbed_im)/solid_angle_control_im;
+    error_metrics.complex_solid_angle_error=complex(solid_angle_error_real,solid_angle_error_im);
+    error_metrics.solid_angle_error_amplitude=abs(error_metrics.complex_solid_angle_error);
+    error_metrics.solid_angle_error_phase=angle(error_metrics.complex_solid_angle_error);
+
+    % vector method with exclusion
+    solid_angle_control_real_excluded=sum(original_field_real_excluded,'all');
+    solid_angle_control_im_excluded=sum(original_field_im_excluded,'all');
+    solid_angle_perturbed_real_excluded=sum(perturbed_field_real_excluded,'all');
+    solid_angle_perturbed_im_excluded=sum(perturbed_field_im_excluded,'all');
+    solid_angle_error_real_excluded=(solid_angle_control_real_excluded-solid_angle_perturbed_real_excluded)/solid_angle_control_real_excluded;
+    solid_angle_error_im_excluded=(solid_angle_control_im_excluded-solid_angle_perturbed_im_excluded)/solid_angle_control_im_excluded;
+    error_metrics.complex_solid_angle_error_excluded=complex(solid_angle_error_real_excluded,solid_angle_error_im_excluded);
+    error_metrics.solid_angle_error_amplitude_excluded=abs(error_metrics.complex_solid_angle_error_excluded);
+    error_metrics.solid_angle_error_phase_excluded=angle(error_metrics.complex_solid_angle_error_excluded);
+
+    % this is the wrong way to do abs(b1)-abs(b2)
+%     error_magnitudes_real=abs(offset_field_real)-abs(offset_field_im);
+%     error_magnitudes_im=abs(offset_field_im)-abs(offset_field_im);
+%     error_metrics.error_magnitudes=complex(error_magnitudes_real,error_magnitudes_im);
+%     error_magnitudes_real_mean=mean(error_magnitudes_real,'all','omitnan');
+%     error_magnitudes_im_mean=mean(error_magnitudes_im,'all','omitnan');
+%     error_metrics.error_magnitudes_mean=complex(error_magnitudes_real,error_magnitudes_im);
+%     error_metrics.error_magnitudes_mean_amplitude=abs(error_metrics.error_magnitudes_mean);
+%     error_metrics.error_magnitudes_mean_phase=angle(error_metrics.error_magnitudes_mean);
+%     % turning error magnitudes into a weighted percentage (as above)
+%     pct_error_magnitudes_real=error_magnitudes_real./((abs(original_field_real)+abs(offset_field_real))/2);
+%     pct_error_magnitudes_real_mean=mean(pct_error_magnitudes_real,'all','omitnan');
+%     pct_error_magnitudes_im=error_magnitudes_im./((original_field_im+offset_field_im)/2);
+%     pct_error_magnitudes_im_mean=mean(pct_error_magnitudes_im,'all','omitnan');
+%     error_metrics.pct_error_magnitudes_mean=complex(pct_error_magnitudes_real_mean,pct_error_magnitudes_im_mean);
+%     error_metrics.pct_error_magnitudes_mean_amplitude=abs(error_metrics.pct_error_magnitudes_mean);
+%     error_metrics.pct_error_magnitudes_mean_phase=angle(error_metrics.pct_error_magnitudes_mean);
+
+%     phase_percent_error=error_phase./abs(angle(original_field))*100;
+%     amplitude_percent_error=error_amplitude./abs(original_field)*100;
+
+%     mean_amplitude_error=mean(error_amplitude,'all','omitnan');
+%     max_amplitude_error=max(error_amplitude,[],'all');
+%     mean_amplitude_percent_error=mean(amplitude_percent_error,'all','omitnan');
+%     max_amplitude_percent_error=max(amplitude_percent_error,[],'all');
+%     mean_phase_error=mean(error_phase,'all','omitnan');
+%     max_phase_error=max(error_phase,[],"all");
+%     mean_phase_percent_error=mean(phase_percent_error,"all",'omitnan');
+%     max_phase_percent_error=max(phase_percent_error,[],"all");
+% 
+%     fprintf('Mean of the residuals amplitudes: %f\n', mean_amplitude_error);
+%     fprintf('Maximum of residuals amplitudes (max error): %f\n', max_amplitude_error);
+%     fprintf('Mean percent error on residuals amplitudes: %f percent\n', mean_amplitude_percent_error);
+%     fprintf('Maximum percent error on residuals amplitudes (max error): %f percent\n', max_amplitude_percent_error);
+%     fprintf('Mean of the phase residuals: %f\n', mean_phase_error);
+%     fprintf('Maximum of the phase residuals (max error): %f\n', max_phase_error);
+%     fprintf('Mean percent error on phase residuals: %f percent\n', mean_phase_percent_error);
+%     fprintf('Maximum percent error on phase residuals: %f percent\n', max_phase_percent_error);
+
+% %     plot magnitude residuals
+%     figure;
+%     subplot(2,1,1);
+%     surf(x,y,error_amplitude);
+%     title('Plotting magnitude of complex residuals');
+%     xlabel(label_1);
+%     ylabel(label_2);
+%     zlabel('Difference in power on linear scale');
+%     colorbar;
+%     subplot(2,1,2);
+%     surf(x,y,error_phase);
+%     title('Plotting residual phase');
+%     xlabel(label_1);
+%     ylabel(label_2);
+%     zlabel('Difference in power on linear scale');
+%     colorbar;
+
+
+    if outputs==1
+        % 3D spherical plot--only helpful for datasets that are in a polar
+        % rather than cartesian grid system
+        figure;
+        subplot(1,2,1);
+        sphere3d(error_amplitude,0,2*pi,-pi/2,pi/2,1,1,'surf');
+        title('Spherical representation of error in amplitude');
+        subplot(1,2,2);
+        sphere3d(error_phase,0,2*pi,-pi/2,pi/2,1,1,'surf');
+        title('Spherical representation of error in phase');
+    
+        figure;
+        ax1=subplot(1,2,1);
+        plot1=pcolor(x,y,error_amplitude);
+        daspect([1 1 1]);
+        plot1.EdgeColor='none';
+        title('Difference between offset and original field: amplitude');
+        xlabel(label_1);
+        ylabel(label_2);
+        colorbar;
+        ax2=subplot(1,2,2);
+    %     scatter(x_grid,y_grid,400/length(x),'filled');
+        plot2=pcolor(x,y,error_phase);
+        daspect([1 1 1]);
+        plot2.EdgeColor='none';
+        title('Difference between offset and original field: phase');
+        xlabel(label_1);
+        ylabel(label_2);
+        colorbar;
+    
+        % plotting percent difference over the entire 2D grid
+        figure;
+    %     ax1=subplot(1,2,1);
+        plot1=pcolor(x,y,error_metrics.weighted_percent_difference_amplitude);
+        daspect([1 1 1]);
+        plot1.EdgeColor='none';
+        caxis([-Inf 1]);
+        title('Weighted percent difference: amplitude');
+        xlabel(label_1);
+        ylabel(label_2);
+        colorbar;
+    %     ax2=subplot(1,2,2);
+    % %     scatter(x_grid,y_grid,400/length(x),'filled');
+    %     plot2=pcolor(x,y,error_metrics.weighted_percent_difference_phase);
+    %     daspect([1 1 1]);
+    %     plot2.EdgeColor='none';
+    %     caxis([-Inf 1]);
+    %     title('Weighted percent difference: phase');
+    %     xlabel(label_1);
+    %     ylabel(label_2);
+    %     colorbar;
+    
+        figure;
+        sphere3d(error_metrics.weighted_percent_difference_amplitude,0,2*pi,-pi/2,pi/2,1,1,'surf','spline');
+    
+        % print statements
+        fprintf('Amplitude of mean weighted percent difference (vector form): %f\n', error_metrics.weighted_percent_difference_mean_amplitude);
+        fprintf('Phase of mean weighted percent difference: %f\n', error_metrics.weighted_percent_difference_mean_phase);
+        fprintf('Mean weighted percent difference in amplitude: %f\n',error_metrics.weighted_percent_difference_amplitude_mean);
+        fprintf('Mean weighted percent difference in phase: %f\n',error_metrics.weighted_percent_difference_phase_mean);
+        fprintf('Amplitude of error range: %f\n',error_metrics.error_range_amplitude);
+        fprintf('Phase of error range: %f\n',error_metrics.error_range_phase);
+        fprintf('Amplitude of percent difference range: %f\n',error_metrics.pct_difference_range_amplitude);
+        fprintf('Phase of percent difference range: %f\n',error_metrics.pct_difference_range_phase);
+        fprintf('Amplitude of standard deviation of the error: %f\n',error_metrics.std_error_amplitude);
+        fprintf('Phase of standard deviation of the error: %f\n',error_metrics.std_error_phase);
+        fprintf('Amplitude of standard deviation of the percent error: %f\n',error_metrics.pct_diff_std_error_amplitude);
+        fprintf('Phase of standard deviation of the percent error: %f\n',error_metrics.pct_diff_std_error_phase);
+        fprintf("Mean of amplitude(b1)-amplitude(b2): %f\n",error_metrics.error_magnitudes_mean);
+        fprintf("Mean of this error magnitude metric as percent difference: %f\n",error_metrics.pct_error_magnitudes_mean);
+        fprintf('Change in fractional solid angle: %f\n',error_metrics.solid_angle_error_fraction);
+        fprintf('Change in fractional solid angle with integration method: %f\n',error_metrics.solid_angle_integrated_error_fraction);
+        fprintf('Amplitude of change in fractional solid angle using vector-based/complex method: %f\n',error_metrics.solid_angle_error_amplitude);
+        fprintf('Phase of change in fractional solid angle using vector-based/complex method: %f\n',error_metrics.solid_angle_error_phase);
+        fprintf('Change in fractional solid angle (main beam only): %f\n',error_metrics.solid_angle_error_fraction_excluded);
+        fprintf('Change in fractional solid angle with integration method (main beam only): %f\n',error_metrics.solid_angle_integrated_error_fraction_excluded);
+        fprintf('Amplitud of change in fractional solid angle using vector-based/')
+
+
+    end
+end
