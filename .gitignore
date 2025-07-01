@@ -1,2 +1,5 @@
 *.npz
 *.mat
+*.jpg
+*ipynb_checkpoints*
+
